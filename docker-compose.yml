@@ -1,0 +1,17 @@
+version: '3'
+services:
+  4iq-demo:
+    container_name: 4iq-demo
+    build: .
+    image: seandyon/4iq-demo:latest
+    environment:
+      MONGODB_URI: mongodb://4iq-mongo/4iq-demo
+    ports:
+      - "3000:3000"
+    links:
+      - 4iq-mongo
+  4iq-mongo:
+    container_name: 4iq-mongo
+    image: mongo:latest
+    ports:
+      - "27017:27017"
