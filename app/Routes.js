@@ -2,6 +2,7 @@ var express = require('express')
 var userRoutes = express.Router()
 var TestUsers = require('./Users')
 var crypto = require('crypto')
+var path = require('path')
 
 var axios = require('axios')
 
@@ -13,15 +14,19 @@ var multer  = require('multer')
 
 var async = require("async")
 
+// v2
+const csv=require("csvtojson");
+
+const asyncHandler = require('express-async-handler')
 
 var storage = multer.diskStorage({
     destination: function(req, file, callback){
-      let path = `./uploads/`
-        fs.mkdirsSync(path)
-        callback(null, path)
+      let fpath = `./uploads/`
+        fs.mkdirsSync(fpath)
+        callback(null, fpath)
     },
     filename: function(req, file, callback){
-        callback(null, new Date() + "-" + "test" + ".xlsx")
+        callback(null, new Date() + "-" + "test" + path.extname(file.originalname))
     }
 })
 
@@ -46,6 +51,47 @@ API = axios.create({
   baseURL: env.FourIQ_BaseURL,
   headers: { 'X-Username': env.FourIQ_USERNAME, 'X-Token': env.FourIQ_TOKEN, 'X-AppToken': env.FourIQ_APPTOKEN, 'Content-Type': 'application/json' }
 })
+
+function getPercent(percentFor,percentOf)
+{
+    return Math.floor(percentFor/percentOf*100);
+}
+
+const getNextResult = async (query, item, returnData, fileName) => {
+
+  let total = returnData.breach_info.query.pagination.total
+  let count = returnData.breach_info.query.pagination.count
+  let page = returnData.breach_info.query.pagination.page
+
+  let numPages = Math.ceil(total / 10)
+
+  let nextId = returnData.breach_info.next_id
+
+  const resp = await API.post('search', query)
+
+  returnData = { user: item.User, breach_info: resp.data.data }
+  fs.writeFile("./uploads/" + fileName, JSON.stringify(returnData), { flag: "a" }, function(err) {
+      if(err) {
+        console.log(err)
+      }
+  })
+
+  page = returnData.breach_info.query.pagination.page
+  nextId = returnData.breach_info.next_id
+
+  console.log(page)
+  console.log(numPages)
+
+  let data = { email: item.User.Email, next_id: nextId }
+  let postdata = JSON.stringify(data)
+
+  if(page < (numPages-1)) {
+    getNextResult(postdata, item, returnData, fileName)
+  } else {
+      return { returnData }
+  }
+}
+
 
 // get a test
 userRoutes.route('/test').get(function(req, res, next) {
@@ -130,6 +176,131 @@ userRoutes.route('/bulkDomainSearch').post(upload.single('files'), function(req,
     //res.status(200).json(JSON.stringify(req.file));
 
 })
+
+
+userRoutes.route('/bulkUserSearchCsv').post(upload.single('files'), asyncHandler(async (req, res, next) => {
+
+  let fileName = "logfile" + new Date() + ".log"
+  let errFileName = "errorFile" + new Date() + ".log"
+
+  console.log('------- file json: ' + JSON.stringify(req.file))
+
+  //csv().fromFile(req.file.path).subscribe((jsonObj)=>{
+
+    //console.log(jsonObj);
+    /*csv string
+    person.comment,person.number
+    hello,1234
+    */
+    //jsonObj: {person":{"comment":"hello", "number":1234}}
+    const csvFilePath = req.file.path
+
+    csv().fromFile(csvFilePath).then((json)=>{
+
+      // we use .then instead of .subscribe as .then runs after the full file is read.
+      // .subscribe runs line by line
+
+    	//console.log(json)
+
+    let len = Object.keys(json).length;
+    console.log(len)
+
+    async.mapLimit(json, 1, function(item, loopcallback) {
+      console.log(JSON.stringify(item))
+      if(typeof item.User.Email !== 'undefined') {
+        console.log(item.User.Email)
+        let data = { email: item.User.Email }
+
+        let postdata =  JSON.stringify(data)
+
+        console.log(postdata)
+        var returnData
+
+        API.post('search', postdata).then(function (resp) {
+          // handle success
+          //console.log(resp.data)
+          returnData = { user: item.User, breach_info: resp.data.data }
+          fs.writeFile("./uploads/" + fileName, JSON.stringify(returnData), { flag: "a" }, function(err) {
+            if(err) {
+              console.log(err)
+            }
+          })
+          let total, count, page, numPages = 0
+          let nextId = ""
+          //total is all
+          //count is how many in blocks of 10
+
+          total = returnData.breach_info.query.pagination.total
+          count = returnData.breach_info.query.pagination.count
+          page = returnData.breach_info.query.pagination.page
+
+          numPages = Math.ceil(total / 10)
+
+          nextId = returnData.breach_info.next_id
+
+          data = { email: item.User.Email, next_id: nextId }
+          postdata = JSON.stringify(data)
+          console.log(nextId)
+
+
+          getNextResult(postdata, item, returnData, fileName).then(function (returnData) {
+
+            console.log(nextId)
+            page = returnData.breach_info.query.pagination.page
+            nextId = returnData.breach_info.next_id
+
+            data = { email: item.User.Email, next_id: nextId }
+            postdata = JSON.stringify(data)
+
+            API.post('search', postdata).then(function (resp) {
+
+              returnData = { user: item.User, breach_info: resp.data.data }
+
+              fs.writeFile("./uploads/" + fileName, JSON.stringify(returnData), { flag: "a" }, function(err) {
+                if(err) {
+                  console.log(err)
+                }
+              })
+              nextId = returnData.breach_info.next_id
+              console.log(nextId)
+            })
+          })
+
+          console.log(getPercent(item.User.UniqueID+1, len) + '% - success')
+          loopcallback()
+        })
+        .catch(function (error) {
+          // handle error
+          //console.log(error)
+          returnData = { user: item.User, error: error.response }
+          fs.writeFile("./uploads/" + errFileName, JSON.stringify(returnData), { flag: "a" }, function(err) {
+            if(err) {
+              console.log(err)
+            }
+          })
+          console.log(getPercent(item.User.UniqueID+1, len) + '% - error')
+          loopcallback()
+        })
+      }
+      else loopcallback()
+    }, (err /*, results*/) => {
+
+        console.log(err)
+
+        //if (err) throw err
+        // results is now an array of the response bodies
+        //console.log(results)
+
+      })
+
+    //})
+
+    })
+
+    /* output format determined by filename */
+    res.status(200).send(JSON.stringify('ok'));
+}))
+
 
 userRoutes.route('/bulkUserSearch').post(upload.single('files'), function(req, res, next) {
 

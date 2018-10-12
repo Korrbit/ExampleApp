@@ -1,6 +1,6 @@
 <template>
   <div class="btn btn-primary jbtn-file"> {{ title }}<input
-    type="file" accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" v-on:change="fileSelected"></div>
+    type="file" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" v-on:change="fileSelected"></div>
 </template>
 
 <script>

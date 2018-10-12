@@ -6,6 +6,7 @@ import RegisterUser from '@/components/register/index'
 import MonitorUser from '@/components/monitor/index'
 import UserBulkSearch from '@/components/bulk/usersearch'
 import DomainBulkSearch from '@/components/bulk/domainsearch'
+import UserBulkSearchCsv from '@/components/bulk/usersearch2'
 
 Vue.use(Router)
 
@@ -40,6 +41,11 @@ export default new Router({
       path: '/userbulk',
       name: 'Bulk Search',
       component: UserBulkSearch
+    },
+    {
+      path: '/userbulkcsv',
+      name: 'Bulk Search',
+      component: UserBulkSearchCsv
     }
   ]
 })
